@@ -1,104 +1,19 @@
-# reliquary-archiver
+Original Repo: https://github.com/IceDynamix/reliquary-archiver
 
-_tool to create a relic export from network packets of a certain turn-based anime game_
 
-json output format is based on the format of [HSR-Scanner](https://github.com/kel-z/HSR-Scanner)
 
-made to be used with [fribbels hsr optimizer](https://github.com/fribbels/hsr-optimizer)
 
-## run
+Live captures didn't work for anyone playing through a VPN like Proton VPN, WireGuard or OpenVPN.
 
-- If on Linux, or you know you want to use pcap (if you don't know what this means, you don't need to worry about it), follow the [pcap instructions](#pcap-instructions) at the bottom
-- Download latest release from [here](https://github.com/IceDynamix/reliquary-archiver/releases/)
-- **Launch the game and get to this screen. Do not go into the game yet**
-  ![main menu start screen](./hsr_hyperdrive.jpg)
-- run the archiver executable and wait until it says "Waiting for login..."
-  ![archiver waiting for login](./waiting_for_login.png)
-  the download button will say "Export not ready" until you start the game
-- start the game by pressing "Click to Start"
-- if successful, the archiver should switch to "Connected!" and the download button should become available
-  ![archiver visual guide](./archiver_visual_guide.avif)
-- Options:
-  1. Live Import **(recommended)** - check that "Enable Live Import" is enabled in the optimizer "Import" section and that it says "Connected".
-  2. Manual Import - click the download button and save the generated `archive_output-...json` file wherever you want
+Npcap exposes these tunnel adapters with a raw IP link type (DLT_RAW, which is 12 on Windows) instead of Ethernet. Live captures passed packets straight to the sniffer, which expects Ethernet frames, so everything from the tunnel was silently dropped and the archiver stayed on "Waiting for login" forever. Offline .pcap files already got their packets converted to Ethernet frames, live captures didn't.
 
-Troubleshooting:
-- Please make sure you are fully entering the game; if you are still on the "Click to Start" train hyperdrive screen, you need to click to start.
-- Brave Shield is incompatible with Live Import, please make an exception for Fribbels
-- You might have to disable your VPN or enable/disable wifi!
-- If you were already in-game before launching the archiver, you must log out and log back in.
+Changes (all in src/capture/pcap.rs):
+- Live captures now run packets through the same conversion as files, based on the device's link type
+- The conversion also handles NULL/LOOP (4-byte address family header) and checks the common link types by number, so live captures don't look up names per packet
+- Devices with an Unknown connection status are no longer skipped, since some tunnel adapters report that
+- Logs each device's link type when capture starts, which helps with debugging
+- Added tests for RAW (12), NULL and LOOP
 
-alternatively, if you already have a packet capture file:
+Tested on Windows 10 with Npcap 1.90 and Proton VPN (WireGuard): the tunnel adapter shows up as RAW, the archiver connects, and the login, inventory and character data are processed.
 
-- click "Upload .pcap"
-- select a `.pcap`, `.pcapng`, or `.etl` file
-- click the download button once the export is ready
-
-### cli usage
-
-```
-Usage: reliquary-archiver.exe [OPTIONS] [OUTPUT]
-
-Arguments:
-  [OUTPUT]  Path to output .json file to, per default: archive_output-%Y-%m-%dT%H-%M-%S.json
-
-Options:
-      --timeout <TIMEOUT>        How long to wait in seconds until timeout is triggered for live captures [default: 120]
-  -s, --stream                   Host a websocket server to stream relic/lc updates in real-time. This will disable the timeout
-  -p, --websocket-port <PORT>    Port to listen on for the websocket server, [default: 23313]
-  -v, --verbose...               How verbose the output should be, can be set up to 3 times. Has no effect if RUST_LOG is set
-  -l, --log-path <LOG_PATH>      Path to output log to
-      --no-update                Don't check for updates, only applicable on Windows
-      --always-update            Update without asking for confirmation, only applicable on Windows
-      --auth-token <AUTH_TOKEN>  Github Auth token to use when checking for updates, only applicable on Windows
-  -e, --exit-after-capture       Don't wait for enter to be pressed after capturing
-  -H, --headless                 Run in headless mode (no GUI), only applicable when GUI feature is enabled
-  -d, --detach                   Detach from the parent terminal (run in background), only applicable on Windows
-  -h, --help                     Print help
-
-Pcap Only:
-      --pcap <PCAP>              Read packets from .pcap file instead of capturing live packets. A pipe, or - for stdin, is read as packets are written to it
-
-Pktmon Only:
-      --etl <ETL>                Read packets from .etl file instead of capturing live packets
-```
-
-to customize logging, either
-
-- set the verbose flags
-- or set `RUST_LOG` env variable to customize logging,
-  see [here](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives)
-
-to output logs to a file, provide `--log-path <path>`. file logs will always be trace-level.
-
-## build from source
-
-- If building on Linux, follow instructions [here](https://github.com/rust-pcap/pcap?tab=readme-ov-file#building)
-    - on Windows nothing extra is needed to build, `wpcap.dll` is loaded from the npcap install at runtime
-- If building on Linux, there is also a dependency on `libwayland-dev`
-- `cargo build` / `cargo run`
-
-note that the necessary resource files are downloaded in the build script (`build.rs`) and compiled into the binary.
-
-## pcap instructions
-
-When running with the `pcap` feature (optional on Windows, required on Linux),
-the following requirements apply:
-
-- requires [npcap](https://npcap.com/) (windows) or `libpcap` (linux)
-    - when installing on windows, make sure to enable the "winpcap api-compatible mode".
-      if this is grayed out for you, see [here](https://github.com/IceDynamix/reliquary-archiver/issues/2)
-      for more details
-        - if you use wifi, enable `Support raw 802.11 traffic (and monitor mode) for wireless adapters`
-    - when building on Linux, set the `CAP_NET_RAW` capability on the resulting executable (
-      via [pcap(3pcap)](https://man.archlinux.org/man/pcap.3pcap#Under~5))
-      ```sh
-      sudo setcap CAP_NET_RAW=+ep target/release/reliquary-archiver
-      ```
-
-## related projects
-
-want to do more with packet parsing? check out the
-[standalone library](https://github.com/IceDynamix/reliquary) the archiver is built on top off!
-
-looking to export your achievements? check out [stardb-exporter](https://github.com/juliuskreutz/stardb-exporter)!
+Note: VPNs that grab traffic with their own driver before it reaches any network adapter (X-VPN, for example) still can't be captured, since the traffic never shows up on any adapter.
