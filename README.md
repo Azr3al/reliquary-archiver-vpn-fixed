@@ -1,6 +1,6 @@
 Original Repo: https://github.com/IceDynamix/reliquary-archiver
 
-
+**ONLY FOR PCAP**
 
 
 Live captures didn't work for anyone playing through a VPN like Proton VPN, WireGuard or OpenVPN.
